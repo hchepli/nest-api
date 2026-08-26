@@ -1,26 +1,51 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateAttendanceConfirmationDto } from './dto/create-attendance-confirmation.dto';
 import { UpdateAttendanceConfirmationDto } from './dto/update-attendance-confirmation.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
 
 @Injectable()
 export class AttendanceConfirmationsService {
-  create(createAttendanceConfirmationDto: CreateAttendanceConfirmationDto) {
-    return 'This action adds a new attendanceConfirmation';
+  constructor(private readonly prismaService: PrismaService) {}
+  async create(createAttendanceConfirmationDto: CreateAttendanceConfirmationDto) {
+    try{
+      return await this.prismaService.attendanceConfirmation.create({ data: createAttendanceConfirmationDto });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe uma confirmação de presença com esse nome');
+      }
+      throw error;
+    }
   }
 
   findAll() {
-    return `This action returns all attendanceConfirmations`;
+    return this.prismaService.attendanceConfirmation.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} attendanceConfirmation`;
+  async findOne(id: string) {
+    const attendanceConfirmation = await this.prismaService.attendanceConfirmation.findUnique({
+      where: { id },
+    });
+    if (!attendanceConfirmation) {
+      throw new NotFoundException('Confirmação de presença não encontrada');
+    }
+    return attendanceConfirmation;
   }
 
-  update(id: number, updateAttendanceConfirmationDto: UpdateAttendanceConfirmationDto) {
-    return `This action updates a #${id} attendanceConfirmation`;
+  async update(id: string, updateAttendanceConfirmationDto: UpdateAttendanceConfirmationDto) {
+    await this.findOne(id);
+    try{
+      return await this.prismaService.attendanceConfirmation.update({ where: { id }, data: updateAttendanceConfirmationDto });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe uma confirmação de presença com esse nome');
+      }
+      throw error;
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} attendanceConfirmation`;
+  async remove(id: string) {
+    await this.findOne(id);
+    return await this.prismaService.attendanceConfirmation.delete({ where: { id } });
   }
 }

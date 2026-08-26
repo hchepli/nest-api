@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -15,8 +16,43 @@ import { SacramentsModule } from './sacraments/sacraments.module';
 import { PastoralGroupsModule } from './pastoral-groups/pastoral-groups.module';
 import { AttendanceConfirmationsModule } from './attendance-confirmations/attendance-confirmations.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
+import { ScheduleAssignmentModule } from './schedule-assignment/schedule-assignment.module';
+import { PermissionModule } from './permission/permission.module';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guards';
 
 @Module({
-  imports: [PrismaModule, AuthModule, UsersModule, RolesModule, VolunteersModule, MassesModule, EventsModule, CategoriesModule, SchedulesModule, AnnouncementsModule, AlbumsModule, PhotosModule, SacramentsModule, PastoralGroupsModule, AttendanceConfirmationsModule, AuditLogsModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    RolesModule,
+    VolunteersModule,
+    MassesModule,
+    EventsModule,
+    CategoriesModule,
+    SchedulesModule,
+    AnnouncementsModule,
+    AlbumsModule,
+    PhotosModule,
+    SacramentsModule,
+    PastoralGroupsModule,
+    AttendanceConfirmationsModule,
+    AuditLogsModule,
+    ScheduleAssignmentModule,
+    PermissionModule,
+  ],
+  providers: [
+  {
+    provide: APP_GUARD,
+    useClass: JwtAuthGuard,
+  },
+  {
+    provide: APP_GUARD,
+    useClass: RolesGuard,
+  },
+  ],
 })
 export class AppModule {}

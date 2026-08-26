@@ -1,26 +1,52 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateVolunteerDto } from './dto/create-volunteer.dto';
 import { UpdateVolunteerDto } from './dto/update-volunteer.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
 
 @Injectable()
 export class VolunteersService {
-  create(createVolunteerDto: CreateVolunteerDto) {
-    return 'This action adds a new volunteer';
+  constructor(private readonly prismaService: PrismaService) {}
+  async create(createVolunteerDto: CreateVolunteerDto) {
+    try{
+      return await this.prismaService.volunteer.create({ data: createVolunteerDto,
+      });
+    } catch (error){
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe um voluntário com esse email');
+      }
+      throw error;
+    }
   }
 
   findAll() {
-    return `This action returns all volunteers`;
+    return this.prismaService.volunteer.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} volunteer`;
+  async findOne(id: number) {
+    const volunteer = await this.prismaService.volunteer.findUnique({
+      where: { id },
+    });
+    if (!volunteer) {
+      throw new NotFoundException('Voluntário não encontrado');
+    }
+    return volunteer;
   }
 
-  update(id: number, updateVolunteerDto: UpdateVolunteerDto) {
-    return `This action updates a #${id} volunteer`;
+  async update(id: number, updateVolunteerDto: UpdateVolunteerDto) {
+    await this.findOne(id);
+    try{
+          return this.prismaService.volunteer.update({ where: { id }, data: updateVolunteerDto });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe um voluntário com esse email');
+      }
+      throw error;
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} volunteer`;
+  async remove(id: number) {
+    await this.findOne(id);
+    return this.prismaService.volunteer.delete({ where: { id } });
   }
 }

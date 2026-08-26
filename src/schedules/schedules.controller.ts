@@ -1,34 +1,47 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req } from '@nestjs/common';
 import { SchedulesService } from './schedules.service';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import { Roles } from '../auth/decorators/roles.decorator';
+import type { RequestWithUser } from '../common/interfaces/request-with-user.interface';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth()
 @Controller('schedules')
 export class SchedulesController {
   constructor(private readonly schedulesService: SchedulesService) {}
 
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Post()
   create(@Body() createScheduleDto: CreateScheduleDto) {
     return this.schedulesService.create(createScheduleDto);
   }
 
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Get()
-  findAll() {
-    return this.schedulesService.findAll();
+  findAll(@Req() req: RequestWithUser) {
+    return this.schedulesService.findAll(req.user);
   }
 
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.schedulesService.findOne(+id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.schedulesService.findOne(id, req.user);
   }
 
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateScheduleDto: UpdateScheduleDto) {
-    return this.schedulesService.update(+id, updateScheduleDto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateScheduleDto: UpdateScheduleDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.schedulesService.update(id, updateScheduleDto, req.user);
   }
 
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.schedulesService.remove(+id);
+  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.schedulesService.remove(id, req.user);
   }
 }

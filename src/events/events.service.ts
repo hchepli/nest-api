@@ -1,26 +1,56 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
+import { generateSlug } from '../common/utils/slug.util';
 
 @Injectable()
 export class EventsService {
-  create(createEventDto: CreateEventDto) {
-    return 'This action adds a new event';
+  constructor(private readonly prismaService: PrismaService) {}
+
+  async create(createEventDto: CreateEventDto) {
+    const { slug, ...rest } = createEventDto;
+    const finalSlug = slug ?? generateSlug(rest.name);
+
+    try {
+      return await this.prismaService.event.create({
+        data: { ...rest, slug: finalSlug },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe um evento com esse nome');
+      }
+      throw error;
+    }
   }
 
   findAll() {
-    return `This action returns all events`;
+    return this.prismaService.event.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} event`;
+  async findOne(id: number) {
+    const event = await this.prismaService.event.findUnique({ where: { id } });
+    if (!event) {
+      throw new NotFoundException('Evento não encontrado');
+    }
+    return event;
   }
 
-  update(id: number, updateEventDto: UpdateEventDto) {
-    return `This action updates a #${id} event`;
+  async update(id: number, updateEventDto: UpdateEventDto) {
+    await this.findOne(id);
+    try {
+      return await this.prismaService.event.update({ where: { id }, data: updateEventDto });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe um evento com esse nome');
+      }
+      throw error;
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} event`;
+  async remove(id: number) {
+    await this.findOne(id);
+    return await this.prismaService.event.delete({ where: { id } });
   }
 }

@@ -1,26 +1,45 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateAuditLogDto } from './dto/create-audit-log.dto';
 import { UpdateAuditLogDto } from './dto/update-audit-log.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
 
 @Injectable()
 export class AuditLogsService {
-  create(createAuditLogDto: CreateAuditLogDto) {
-    return 'This action adds a new auditLog';
+  constructor(private readonly prismaService: PrismaService) {}
+
+  async create(createAuditLogDto: CreateAuditLogDto) {
+    try{
+      return await this.prismaService.auditLog.create({ data: createAuditLogDto });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Já existe um log de auditoria com esse nome');
+      }
+      throw error;
+    }
   }
 
   findAll() {
-    return `This action returns all auditLogs`;
+    return  this.prismaService.auditLog.findMany();
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} auditLog`;
+  async findOne(id: string) {
+    const auditLog = await this.prismaService.auditLog.findUnique({
+      where: { id },
+    });
+    if (!auditLog) {
+      throw new NotFoundException('Log de auditoria não encontrado');
+    }
+    return auditLog;
   }
 
-  update(id: number, updateAuditLogDto: UpdateAuditLogDto) {
-    return `This action updates a #${id} auditLog`;
+  async update(id: string, updateAuditLogDto: UpdateAuditLogDto) {
+    await this.findOne(id);
+    return await this.prismaService.auditLog.update({ where: { id }, data: updateAuditLogDto });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} auditLog`;
+  async remove(id: string) {
+    await this.findOne(id);
+    return await this.prismaService.auditLog.delete({ where: { id } });
   }
 }
