@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseIntPipe, Req, Query } from '@nestjs/common';
 import type { RequestWithUser } from '../common/interfaces/request-with-user.interface';
 import { AnnouncementsService } from './announcements.service';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
@@ -6,6 +6,7 @@ import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @ApiBearerAuth()
 @Controller('announcements')
@@ -21,8 +22,8 @@ export class AnnouncementsController {
   // Pública - só PUBLISHED (site institucional)
   @Public()
   @Get()
-  findAll() {
-    return this.announcementsService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.announcementsService.findAll(query);
   }
 
   // Admin - todos os status, inclusive RASCUNHO (UC024/025)

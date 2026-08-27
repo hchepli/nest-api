@@ -2,7 +2,9 @@ import { Injectable, NotFoundException, ConflictException, ForbiddenException, B
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import { ScheduleQueryDto } from './dto/schedule-query.dto';
 import { Prisma } from '../../generated/prisma/client';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 
 interface ScopedUser {
   roleName: string;
@@ -31,13 +33,69 @@ export class SchedulesService {
     }
   }
 
-  findAll(user: ScopedUser) {
-    const where =
+  async findAll(user: ScopedUser, query: ScheduleQueryDto): Promise<PaginatedResult<any>> {
+    const { page = 1, limit = 10, massId, eventId, volunteerId, startDate, endDate } = query;
+    const skip = (page - 1) * limit;
+
+    // Escopo por pastoral (RN006/RN008) - mesma regra de antes, aplicada primeiro
+    const scopeWhere: Prisma.ScheduleWhereInput =
       user.roleName === 'Coordenador de Pastoral'
         ? { pastoralGroupId: user.pastoralGroupId }
-        : {}; // Admin Geral e Secretaria veem tudo
+        : {};
 
-    return this.prismaService.schedule.findMany({ where });
+    // Filtros adicionais do relatório (RF008/UC023)
+    const filterWhere: Prisma.ScheduleWhereInput = {
+      ...(massId && { massId }),
+      ...(eventId && { eventId }),
+      ...(volunteerId && {
+        assignments: { some: { volunteerId } },
+      }),
+      ...((startDate || endDate) && {
+        OR: [
+          {
+            mass: {
+              dateTime: {
+                ...(startDate && { gte: new Date(startDate) }),
+                ...(endDate && { lte: new Date(endDate) }),
+              },
+            },
+          },
+          {
+            event: {
+              startDate: {
+                ...(startDate && { gte: new Date(startDate) }),
+                ...(endDate && { lte: new Date(endDate) }),
+              },
+            },
+          },
+        ],
+      }),
+    };
+
+    // Combina escopo + filtros com AND explícito, pra garantir que o
+    // Coordenador NUNCA escape do próprio escopo mesmo filtrando por
+    // massId/eventId/volunteerId de fora da sua pastoral.
+    const where: Prisma.ScheduleWhereInput = {
+      AND: [scopeWhere, filterWhere],
+    };
+
+    const [data, total] = await Promise.all([
+      this.prismaService.schedule.findMany({
+        where,
+        skip,
+        take: limit,
+        include: { assignments: true },
+      }),
+      this.prismaService.schedule.count({ where }),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async findOne(id: string, user: ScopedUser) {

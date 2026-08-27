@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @ApiBearerAuth()
 @Controller('events')
@@ -19,8 +20,8 @@ export class EventsController {
 
   @Public()
   @Get()
-  findAll() {
-    return this.eventsService.findAll();
+  findAll(@Query() query: PaginationQueryDto) {
+    return this.eventsService.findAll(query);
   }
 
   @Public()

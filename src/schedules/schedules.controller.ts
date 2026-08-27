@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Req, Query } from '@nestjs/common';
 import { SchedulesService } from './schedules.service';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import { ScheduleQueryDto } from './dto/schedule-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { RequestWithUser } from '../common/interfaces/request-with-user.interface';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -19,8 +20,8 @@ export class SchedulesController {
 
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Get()
-  findAll(@Req() req: RequestWithUser) {
-    return this.schedulesService.findAll(req.user);
+  findAll(@Req() req: RequestWithUser, @Query() query: ScheduleQueryDto) {
+    return this.schedulesService.findAll(req.user, query);
   }
 
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')

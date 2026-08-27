@@ -21,6 +21,7 @@ import { PermissionModule } from './permission/permission.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guards';
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { RolesGuard } from './auth/guards/roles.guards';
     AuditLogsModule,
     ScheduleAssignmentModule,
     PermissionModule,
+    StorageModule
   ],
   providers: [
   {

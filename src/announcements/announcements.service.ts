@@ -2,8 +2,10 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { UpdateAnnouncementDto } from './dto/update-announcement.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '../../generated/prisma/client';
+import { Announcement, Prisma } from '../../generated/prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
 
 @Injectable()
 export class AnnouncementsService {
@@ -26,11 +28,39 @@ export class AnnouncementsService {
   }
 
   // Uso público (site institucional) - só comunicados publicados
-  findAll() {
-    return this.prismaService.announcement.findMany({
-      where: { status: 'PUBLISHED' },
-    });
-  }
+async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Announcement>> {
+  const { page = 1, limit = 10, search, sortBy, order = 'desc' } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.AnnouncementWhereInput = {
+    status: 'PUBLISHED',
+    ...(search && {
+      title: { contains: search, mode: 'insensitive' },
+    }),
+  };
+
+  const allowedSortFields = ['createdAt', 'title'] as const;
+  const finalSortBy = allowedSortFields.includes(sortBy as any) ? sortBy : 'createdAt';
+  const orderBy = { [finalSortBy as string]: order };
+
+  const [data, total] = await Promise.all([
+    this.prismaService.announcement.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy,
+    }),
+    this.prismaService.announcement.count({ where }),
+  ]);
+
+  return {
+    data,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
 
   // Uso administrativo - todos os status, inclusive RASCUNHO (UC024/025)
   findAllAdmin() {
