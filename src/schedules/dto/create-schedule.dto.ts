@@ -1,25 +1,35 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsInt,
+  IsOptional,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { CreateNestedScheduleAssignmentDto } from '../../schedule-assignment/dto/create-nested-schedule-assignment.dto';
 
 export class CreateScheduleDto {
-    @ApiPropertyOptional({
-        description: 'Vínculo com Evento. Regra RN007 (Mass XOR Event, nunca ambos nem nenhum) é validada no ScheduleService, não aqui.',
-    })
-    @IsInt()
-    @IsOptional()
-    eventId?: number;
+  // RN007 (Mass XOR Event): validação real fica no service (Dia 2).
+  // Aqui, no DTO, ambos continuam opcionais.
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  massId?: number;
 
-    @ApiPropertyOptional({
-        description: 'Vínculo com Missa. Regra RN007 (Mass XOR Event) é validada no ScheduleService, não aqui.',
-    })
-    @IsInt()
-    @IsOptional()
-    massId?: number;
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional()
+  @IsInt()
+  eventId?: number;
 
-    @ApiPropertyOptional({
-        description: 'Escopo/filtro de relatório por pastoral (RN006/RN008).',
-    })
-    @IsInt()
-    @IsOptional()
-    pastoralGroupId?: number;
+  @ApiPropertyOptional({
+    type: [CreateNestedScheduleAssignmentDto],
+    description: 'Atribuições criadas junto com a Escala (pode vir vazio)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(0)
+  @ValidateNested({ each: true })
+  @Type(() => CreateNestedScheduleAssignmentDto)
+  assignments?: CreateNestedScheduleAssignmentDto[] = [];
 }

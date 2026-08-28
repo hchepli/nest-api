@@ -116,6 +116,8 @@ model PastoralGroup {
 
   users     User[]
   schedules Schedule[]
+  masses  MassPastoralGroup[]
+  events  EventPastoralGroup[]
 
   @@map("pastorais")
 }
@@ -173,6 +175,7 @@ model Mass {
 
   events    Event[]
   schedules Schedule[]
+  pastoralGroups MassPastoralGroup[]
 
   @@map("missas")
 }
@@ -216,8 +219,31 @@ model Event {
   schedules               Schedule[]
   albums                  Album[]
   attendanceConfirmations AttendanceConfirmation[]
+  pastoralGroups EventPastoralGroup[]
 
   @@map("eventos")
+}
+
+model MassPastoralGroup {
+  massId          Int
+  pastoralGroupId Int
+
+  mass          Mass          @relation(fields: [massId], references: [id], onDelete: Cascade)
+  pastoralGroup PastoralGroup @relation(fields: [pastoralGroupId], references: [id], onDelete: Cascade)
+
+  @@id([massId, pastoralGroupId])
+  @@map("missa_pastorais")
+}
+
+model EventPastoralGroup {
+  eventId         Int
+  pastoralGroupId Int
+
+  event         Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  pastoralGroup PastoralGroup @relation(fields: [pastoralGroupId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, pastoralGroupId])
+  @@map("evento_pastorais")
 }
 
 // ------------------------------------------------------------

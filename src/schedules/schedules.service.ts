@@ -15,23 +15,74 @@ interface ScopedUser {
 export class SchedulesService {
   constructor(private readonly prismaService: PrismaService) {}
 
-  async create(createScheduleDto: CreateScheduleDto) {
-    try {
-      return await this.prismaService.schedule.create({
-        data: createScheduleDto,
-      });
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          throw new ConflictException('Já existe uma escala com esse horário, data e função');
-        }
-        if (error.code === 'P2003') {
-          throw new BadRequestException('Missa, Evento ou Pastoral informado(a) não existe.');
-        }
-      }
-      throw error;
-    }
+ async create(createScheduleDto: CreateScheduleDto) {
+  const { massId, eventId, assignments = [] } = createScheduleDto;
+
+  // RN007: massId XOR eventId — exatamente um dos dois, nunca os dois,
+  // nunca nenhum. Validado ANTES de tocar no banco.
+  const hasMass = massId !== undefined && massId !== null;
+  const hasEvent = eventId !== undefined && eventId !== null;
+
+  if (hasMass === hasEvent) {
+    throw new BadRequestException(
+      'A Escala deve estar vinculada a uma Missa OU a um Evento, nunca ambos nem nenhum (RN007).',
+    );
   }
+
+  // Duplicidade dentro do próprio array de assignments (mesmo
+  // volunteerId + role repetido) — rejeitar ANTES de abrir a transação.
+  const seen = new Set<string>();
+  for (const a of assignments) {
+    const key = `${a.volunteerId}:${a.role}`;
+    if (seen.has(key)) {
+      throw new BadRequestException(
+        `Atribuição duplicada no request: volunteerId=${a.volunteerId}, role="${a.role}".`,
+      );
+    }
+    seen.add(key);
+  }
+
+  try {
+    return await this.prismaService.$transaction(async (tx) => {
+      const schedule = await tx.schedule.create({
+        data: {
+          massId: massId ?? null,
+          eventId: eventId ?? null,
+          // pastoralGroupId: NÃO preenchido aqui ainda — ponto em aberto (Dia 3).
+        },
+      });
+
+      if (assignments.length > 0) {
+        await tx.scheduleAssignment.createMany({
+          data: assignments.map((a) => ({
+            scheduleId: schedule.id,
+            volunteerId: a.volunteerId,
+            role: a.role,
+          })),
+        });
+      }
+
+      return tx.schedule.findUniqueOrThrow({
+        where: { id: schedule.id },
+        include: { assignments: true },
+      });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2003') {
+        throw new BadRequestException(
+          'Missa, Evento ou algum Voluntário informado nas atribuições não existe.',
+        );
+      }
+      if (error.code === 'P2002') {
+        throw new ConflictException(
+          'Atribuição duplicada (mesmo voluntário + função na mesma escala).',
+        );
+      }
+    }
+    throw error;
+  }
+}
 
   async findAll(user: ScopedUser, query: ScheduleQueryDto): Promise<PaginatedResult<any>> {
     const { page = 1, limit = 10, massId, eventId, volunteerId, startDate, endDate } = query;
