@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/commo
 import { MassesService } from './masses.service';
 import { CreateMassDto } from './dto/create-mass.dto';
 import { UpdateMassDto } from './dto/update-mass.dto';
+import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -39,5 +40,12 @@ export class MassesController {
   @Delete(':id')
   remove(@Param('id') id: number) {
     return this.massesService.remove(+id);
+  }
+
+  // RN017 (proposta): vincula Pastorais participantes desta Missa
+  @Roles('Admin Geral', 'Secretaria')
+  @Post(':id/pastoral-groups')
+  linkPastoralGroups(@Param('id') id: number, @Body() dto: LinkPastoralGroupsDto) {
+    return this.massesService.linkPastoralGroups(+id, dto);
   }
 }

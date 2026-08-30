@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, Event } from '../../generated/prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
@@ -27,46 +28,40 @@ export class EventsService {
     }
   }
 
-  // Uso público (site institucional) - não lista eventos CANCELLED,
-  // que continuam acessíveis via findOne (rota específica), só não
-  // aparecem na listagem geral.
-async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Event>> {
-  const { page = 1, limit = 10, search, sortBy, order = 'desc' } = query;
-  const skip = (page - 1) * limit;
+  async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Event>> {
+    const { page = 1, limit = 10, search, sortBy, order = 'desc' } = query;
+    const skip = (page - 1) * limit;
 
-  const where: Prisma.EventWhereInput = {
-    status: 'ACTIVE',
-    ...(search && {
-      name: { contains: search, mode: 'insensitive' },
-    }),
-  };
+    const where: Prisma.EventWhereInput = {
+      status: 'ACTIVE',
+      ...(search && {
+        name: { contains: search, mode: 'insensitive' },
+      }),
+    };
 
-  const allowedSortFields = ['startDate', 'name'] as const;
-  const finalSortBy = allowedSortFields.includes(sortBy as any) ? sortBy : 'startDate';
-  const orderBy = { [finalSortBy as string]: order };
+    const allowedSortFields = ['startDate', 'name'] as const;
+    const finalSortBy = allowedSortFields.includes(sortBy as any) ? sortBy : 'startDate';
+    const orderBy = { [finalSortBy as string]: order };
 
-  const [data, total] = await Promise.all([
-    this.prismaService.event.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
-    }),
-    this.prismaService.event.count({ where }),
-  ]);
+    const [data, total] = await Promise.all([
+      this.prismaService.event.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy,
+      }),
+      this.prismaService.event.count({ where }),
+    ]);
 
-  return {
-    data,
-    total,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-  };
-}
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
+  }
 
-  // Sem filtro de status - evento cancelado continua acessível
-  // diretamente pela própria página/rota (não é escondido, só não
-  // aparece na listagem geral).
   async findOne(id: number) {
     const event = await this.prismaService.event.findUnique({ where: { id } });
     if (!event) {
@@ -90,5 +85,35 @@ async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Event>> {
   async remove(id: number) {
     await this.findOne(id);
     return await this.prismaService.event.delete({ where: { id } });
+  }
+
+  // RN017 (proposta): vincula quais Pastorais participam deste Evento.
+  async linkPastoralGroups(id: number, dto: LinkPastoralGroupsDto) {
+    await this.findOne(id);
+
+    try {
+      return await this.prismaService.$transaction(async (tx) => {
+        await tx.eventPastoralGroup.deleteMany({ where: { eventId: id } });
+
+        if (dto.pastoralGroupIds.length > 0) {
+          await tx.eventPastoralGroup.createMany({
+            data: dto.pastoralGroupIds.map((pastoralGroupId) => ({
+              eventId: id,
+              pastoralGroupId,
+            })),
+          });
+        }
+
+        return tx.eventPastoralGroup.findMany({
+          where: { eventId: id },
+          include: { pastoralGroup: true },
+        });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new NotFoundException('Uma ou mais Pastorais informadas não existem.');
+      }
+      throw error;
+    }
   }
 }

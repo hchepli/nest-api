@@ -15,11 +15,9 @@ interface ScopedUser {
 export class SchedulesService {
   constructor(private readonly prismaService: PrismaService) {}
 
- async create(createScheduleDto: CreateScheduleDto) {
-  const { massId, eventId, assignments = [] } = createScheduleDto;
+async create(createScheduleDto: CreateScheduleDto, user: ScopedUser) {
+  const { massId, eventId, assignments = [], pastoralGroupId: manualPastoralGroupId } = createScheduleDto;
 
-  // RN007: massId XOR eventId — exatamente um dos dois, nunca os dois,
-  // nunca nenhum. Validado ANTES de tocar no banco.
   const hasMass = massId !== undefined && massId !== null;
   const hasEvent = eventId !== undefined && eventId !== null;
 
@@ -29,8 +27,6 @@ export class SchedulesService {
     );
   }
 
-  // Duplicidade dentro do próprio array de assignments (mesmo
-  // volunteerId + role repetido) — rejeitar ANTES de abrir a transação.
   const seen = new Set<string>();
   for (const a of assignments) {
     const key = `${a.volunteerId}:${a.role}`;
@@ -42,13 +38,73 @@ export class SchedulesService {
     seen.add(key);
   }
 
+  // RN006/RN017: define o pastoralGroupId final da Escala.
+  let finalPastoralGroupId: number | null = null;
+
+  if (user.roleName === 'Coordenador de Pastoral') {
+    // Automático a partir do usuário logado — Coordenador não escolhe.
+    finalPastoralGroupId = user.pastoralGroupId;
+
+    // Busca as pastorais vinculadas à Mass/Event informado (RN017).
+    const linkedPastoralGroupIds = hasMass
+      ? (
+          await this.prismaService.massPastoralGroup.findMany({
+            where: { massId },
+            select: { pastoralGroupId: true },
+          })
+        ).map((r) => r.pastoralGroupId)
+      : (
+          await this.prismaService.eventPastoralGroup.findMany({
+            where: { eventId },
+            select: { pastoralGroupId: true },
+          })
+        ).map((r) => r.pastoralGroupId);
+
+    if (
+      !user.pastoralGroupId ||
+      !linkedPastoralGroupIds.includes(user.pastoralGroupId)
+    ) {
+      throw new ForbiddenException(
+        'Sua Pastoral não está vinculada a esta Missa/Evento — você não pode criar Escala aqui (RN006/RN017).',
+      );
+    }
+  } else {
+    // Admin Geral/Secretaria: pastoralGroupId manual e opcional.
+    finalPastoralGroupId = manualPastoralGroupId ?? null;
+
+    // Se informado manualmente, precisa ser coerente com o vínculo
+    // da Mass/Event (RN017) — não só bater com o usuário, mas o dado
+    // em si precisa fazer sentido.
+    if (finalPastoralGroupId !== null) {
+      const linkedPastoralGroupIds = hasMass
+        ? (
+            await this.prismaService.massPastoralGroup.findMany({
+              where: { massId },
+              select: { pastoralGroupId: true },
+            })
+          ).map((r) => r.pastoralGroupId)
+        : (
+            await this.prismaService.eventPastoralGroup.findMany({
+              where: { eventId },
+              select: { pastoralGroupId: true },
+            })
+          ).map((r) => r.pastoralGroupId);
+
+      if (!linkedPastoralGroupIds.includes(finalPastoralGroupId)) {
+        throw new BadRequestException(
+          'A Pastoral informada não está vinculada à Missa/Evento selecionado (RN017).',
+        );
+      }
+    }
+  }
+
   try {
     return await this.prismaService.$transaction(async (tx) => {
       const schedule = await tx.schedule.create({
         data: {
           massId: massId ?? null,
           eventId: eventId ?? null,
-          // pastoralGroupId: NÃO preenchido aqui ainda — ponto em aberto (Dia 3).
+          pastoralGroupId: finalPastoralGroupId,
         },
       });
 
@@ -148,6 +204,66 @@ export class SchedulesService {
       totalPages: Math.ceil(total / limit),
     };
   }
+
+  async findAllForExport(user: ScopedUser, query: ScheduleQueryDto) {
+  const { massId, eventId, volunteerId, startDate, endDate } = query;
+
+  // Escopo por pastoral (RN006/RN008) - idêntico ao findAll
+  const scopeWhere: Prisma.ScheduleWhereInput =
+    user.roleName === 'Coordenador de Pastoral'
+      ? { pastoralGroupId: user.pastoralGroupId }
+      : {};
+
+  // Filtros do relatório - idêntico ao findAll
+  const filterWhere: Prisma.ScheduleWhereInput = {
+    ...(massId && { massId }),
+    ...(eventId && { eventId }),
+    ...(volunteerId && {
+      assignments: { some: { volunteerId } },
+    }),
+    ...((startDate || endDate) && {
+      OR: [
+        {
+          mass: {
+            dateTime: {
+              ...(startDate && { gte: new Date(startDate) }),
+              ...(endDate && { lte: new Date(endDate) }),
+            },
+          },
+        },
+        {
+          event: {
+            startDate: {
+              ...(startDate && { gte: new Date(startDate) }),
+              ...(endDate && { lte: new Date(endDate) }),
+            },
+          },
+        },
+      ],
+    }),
+  };
+
+  const where: Prisma.ScheduleWhereInput = {
+    AND: [scopeWhere, filterWhere],
+  };
+
+  // Sem skip/take - retorna o conjunto completo filtrado.
+  // Includes necessários pra montar as colunas do relatório.
+  return this.prismaService.schedule.findMany({
+    where,
+    include: {
+      mass: { select: { title: true, dateTime: true } },
+      event: { select: { name: true, startDate: true } },
+      pastoralGroup: { select: { name: true } },
+      assignments: {
+        include: {
+          volunteer: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: [{ mass: { dateTime: 'asc' } }, { event: { startDate: 'asc' } }],
+  });
+}
 
   async findOne(id: string, user: ScopedUser) {
     const schedule = await this.prismaService.schedule.findUnique({ where: { id } });

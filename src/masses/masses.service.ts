@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateMassDto } from './dto/create-mass.dto';
 import { UpdateMassDto } from './dto/update-mass.dto';
+import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
 
@@ -48,5 +49,36 @@ export class MassesService {
   async remove(id: number) {
     await this.findOne(id);
     return await this.prismaService.mass.delete({ where: { id } });
+  }
+
+  // RN017 (proposta): vincula quais Pastorais participam desta Missa.
+  // Substitui o conjunto atual pelo enviado (delete + createMany em transação).
+  async linkPastoralGroups(id: number, dto: LinkPastoralGroupsDto) {
+    await this.findOne(id);
+
+    try {
+      return await this.prismaService.$transaction(async (tx) => {
+        await tx.massPastoralGroup.deleteMany({ where: { massId: id } });
+
+        if (dto.pastoralGroupIds.length > 0) {
+          await tx.massPastoralGroup.createMany({
+            data: dto.pastoralGroupIds.map((pastoralGroupId) => ({
+              massId: id,
+              pastoralGroupId,
+            })),
+          });
+        }
+
+        return tx.massPastoralGroup.findMany({
+          where: { massId: id },
+          include: { pastoralGroup: true },
+        });
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new NotFoundException('Uma ou mais Pastorais informadas não existem.');
+      }
+      throw error;
+    }
   }
 }

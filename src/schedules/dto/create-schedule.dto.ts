@@ -32,4 +32,13 @@ export class CreateScheduleDto {
   @ValidateNested({ each: true })
   @Type(() => CreateNestedScheduleAssignmentDto)
   assignments?: CreateNestedScheduleAssignmentDto[] = [];
+
+  @ApiPropertyOptional({
+    description:
+      'Pastoral vinculada à Escala (RN006/RN008/RN017). Preenchido automaticamente se o usuário logado for Coordenador de Pastoral — só Admin Geral/Secretaria podem informar manualmente.',
+    example: 1,
+  })
+  @IsOptional()
+  @IsInt()
+  pastoralGroupId?: number;
 }

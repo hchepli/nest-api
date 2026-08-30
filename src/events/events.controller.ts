@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestj
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -40,5 +41,12 @@ export class EventsController {
   @Delete(':id')
   remove(@Param('id') id: number) {
     return this.eventsService.remove(+id);
+  }
+
+  // RN017 (proposta): vincula Pastorais participantes deste Evento
+  @Roles('Admin Geral', 'Secretaria')
+  @Post(':id/pastoral-groups')
+  linkPastoralGroups(@Param('id') id: number, @Body() dto: LinkPastoralGroupsDto) {
+    return this.eventsService.linkPastoralGroups(+id, dto);
   }
 }
