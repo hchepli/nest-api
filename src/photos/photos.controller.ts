@@ -19,6 +19,7 @@ import type { UploadedFileLike } from './photos.service';
 import { UpdatePhotoDto } from './dto/update-photo.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { Auditable } from '../audit-logs/decorators/auditable.decorator';
 
 // RNF008 - valores sugeridos, ainda não confirmados definitivamente.
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -29,6 +30,7 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export class PhotosController {
   constructor(private readonly photosService: PhotosService) {}
 
+  @Auditable('Photo')
   @Roles('Admin Geral', 'Secretaria')
   @Post()
   @ApiConsumes('multipart/form-data')
@@ -87,6 +89,7 @@ export class PhotosController {
 
   // Atualização (ex: marcar/desmarcar capa) continua via JSON comum,
   // não envolve reenvio de arquivo.
+  @Auditable('Photo')
   @Roles('Admin Geral', 'Secretaria')
   @Patch(':id')
   update(
@@ -96,6 +99,7 @@ export class PhotosController {
     return this.photosService.update(id, updatePhotoDto);
   }
 
+  @Auditable('Photo')
   @Roles('Admin Geral', 'Secretaria')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {

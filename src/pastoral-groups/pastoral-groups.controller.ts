@@ -6,12 +6,14 @@ import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import type { RequestWithUser } from '../common/interfaces/request-with-user.interface';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { Auditable } from '../audit-logs/decorators/auditable.decorator';
 
 @ApiBearerAuth()
 @Controller('pastoral-groups')
 export class PastoralGroupsController {
   constructor(private readonly pastoralGroupsService: PastoralGroupsService) {}
 
+  @Auditable('PastoralGroup')
   @Roles('Admin Geral')
   @Post()
   create(@Body() createPastoralGroupDto: CreatePastoralGroupDto) {
@@ -30,6 +32,7 @@ export class PastoralGroupsController {
     return this.pastoralGroupsService.findOne(+id);
   }
 
+  @Auditable('PastoralGroup')
   @Roles('Admin Geral', 'Coordenador de Pastoral')
   @Patch(':id')
   update(
@@ -40,6 +43,7 @@ export class PastoralGroupsController {
     return this.pastoralGroupsService.update(+id, updatePastoralGroupDto, req.user);
   }
 
+  @Auditable('PastoralGroup')
   @Roles('Admin Geral')
   @Delete(':id')
   remove(@Param('id') id: number) {

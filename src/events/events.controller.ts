@@ -7,12 +7,15 @@ import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { Auditable } from '../audit-logs/decorators/auditable.decorator';
 
 @ApiBearerAuth()
 @Controller('events')
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 
+
+  @Auditable('Event')
   @Roles('Admin Geral', 'Secretaria')
   @Post()
   create(@Body() createEventDto: CreateEventDto) {
@@ -31,12 +34,14 @@ export class EventsController {
     return this.eventsService.findOne(+id);
   }
 
+  @Auditable('Event')
   @Roles('Admin Geral', 'Secretaria')
   @Patch(':id')
   update(@Param('id') id: number, @Body() updateEventDto: UpdateEventDto) {
     return this.eventsService.update(+id, updateEventDto);
   }
 
+  @Auditable('Event')
   @Roles('Admin Geral', 'Secretaria')
   @Delete(':id')
   remove(@Param('id') id: number) {

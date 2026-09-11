@@ -34,13 +34,19 @@ export class UsersService {
     return users.map((user) => this.excludePassword(user));
   }
 
-  async findOne(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) {
-      throw new NotFoundException(`Usuário com id ${id} não encontrado`);
-    }
-    return user; // uso interno (ex: AuthService vai precisar do passwordHash aqui)
+async findOne(id: string) {
+  const user = await this.prisma.user.findUnique({
+    where: { id },
+    include: {
+      role: { select: { id: true, name: true } },
+      pastoralGroup: { select: { id: true, name: true } },
+    },
+  });
+  if (!user) {
+    throw new NotFoundException(`Usuário com id ${id} não encontrado`);
   }
+  return user; // uso interno (ex: AuthService vai precisar do passwordHash aqui)
+}
 
   async findOnePublic(id: string) {
     const user = await this.findOne(id);

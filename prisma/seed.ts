@@ -111,11 +111,11 @@ async function main() {
   // 4. VOLUNTEERS (2)
   // ------------------------------------------------------------
   const voluntario1 = await prisma.volunteer.create({
-    data: { name: 'João da Silva', phone: '11999990001', email: 'joao@example.com' },
+    data: { name: 'João da Silva', phone: '11999990001', email: 'joao@example.com', pastoralGroup: { connect: { id: 1 } }, },
   });
 
   const voluntario2 = await prisma.volunteer.create({
-    data: { name: 'Maria Oliveira', phone: '11999990002', email: 'maria@example.com' },
+    data: { name: 'Maria Oliveira', phone: '11999990002', email: 'maria@example.com', pastoralGroup: { connect: { id: 2 } }, },
   });
 
   console.log('Voluntários criados.');

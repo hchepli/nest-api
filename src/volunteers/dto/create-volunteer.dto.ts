@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, MaxLength, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength, IsOptional, IsInt } from 'class-validator';
 
 export class CreateVolunteerDto {
     @ApiProperty({
@@ -31,4 +31,12 @@ export class CreateVolunteerDto {
     @IsNotEmpty()
     @MaxLength(20)
     phone!: string;
+
+    @ApiProperty({
+        description: 'ID da Pastoral à qual o voluntário está vinculado (RN006/RN009 — obrigatório, 1:N)',
+        example: 1,
+    })
+    @IsInt()
+    @IsNotEmpty()
+    pastoralGroupId!: number;
 }

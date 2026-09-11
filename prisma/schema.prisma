@@ -111,13 +111,15 @@ model PastoralGroup {
   name        String   @map("nome") @db.VarChar(120)
   description String?  @map("descricao")
   contact     String?  @map("contato") @db.VarChar(120)
+  defaultRole String?  @map("default_role") @db.VarChar(80)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  users     User[]
-  schedules Schedule[]
-  masses  MassPastoralGroup[]
-  events  EventPastoralGroup[]
+  users      User[]
+  schedules  Schedule[]
+  masses     MassPastoralGroup[]
+  events     EventPastoralGroup[]
+  volunteers Volunteer[]
 
   @@map("pastorais")
 }
@@ -148,14 +150,16 @@ model User {
 // VOLUNTEERS (voluntarios) - RN009 - não são usuários, sem login
 // ------------------------------------------------------------
 model Volunteer {
-  id        Int      @id @default(autoincrement())
-  name      String   @map("nome") @db.VarChar(150)
-  phone     String   @map("telefone") @db.VarChar(30)
-  email     String?  @db.VarChar(180)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id              Int      @id @default(autoincrement())
+  name            String   @map("nome") @db.VarChar(150)
+  phone           String   @map("telefone") @db.VarChar(30)
+  email           String?  @db.VarChar(180)
+  pastoralGroupId Int      @map("pastoral_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  assignments ScheduleAssignment[]
+  pastoralGroup PastoralGroup        @relation(fields: [pastoralGroupId], references: [id])
+  assignments   ScheduleAssignment[]
 
   @@map("voluntarios")
 }

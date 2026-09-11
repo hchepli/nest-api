@@ -4,6 +4,7 @@ import { UpdateMassDto } from './dto/update-mass.dto';
 import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma/client';
+import { MassQueryDto } from './dto/mass-query.dto';
 
 @Injectable()
 export class MassesService {
@@ -20,9 +21,32 @@ export class MassesService {
     }
   }
 
-  findAll() {
-    return this.prismaService.mass.findMany();
-  }
+  async findAll(query: MassQueryDto) {
+  const { page = 1, limit = 10, search, sortBy, order = 'asc', startDate, endDate } = query;
+  const skip = (page - 1) * limit;
+
+  const where: Prisma.MassWhereInput = {
+    ...(search && { title: { contains: search, mode: 'insensitive' } }),
+    ...((startDate || endDate) && {
+      dateTime: {
+        ...(startDate && { gte: new Date(startDate) }),
+        ...(endDate && { lte: new Date(endDate) }),
+      },
+    }),
+  };
+
+  const allowedSortFields = ['dateTime', 'title'];
+  const orderBy: Prisma.MassOrderByWithRelationInput = allowedSortFields.includes(sortBy ?? '')
+    ? { [sortBy as string]: order }
+    : { dateTime: 'asc' };
+
+  const [data, total] = await Promise.all([
+    this.prismaService.mass.findMany({ where, skip, take: limit, orderBy }),
+    this.prismaService.mass.count({ where }),
+  ]);
+
+  return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
 
   async findOne(id: number) {
     const mass = await this.prismaService.mass.findUnique({

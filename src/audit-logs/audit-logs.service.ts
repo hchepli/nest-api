@@ -20,12 +20,24 @@ export class AuditLogsService {
   }
 
   findAll() {
-    return  this.prismaService.auditLog.findMany();
+    return this.prismaService.auditLog.findMany({
+      include: {
+        user: {
+          select: { name: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async findOne(id: string) {
     const auditLog = await this.prismaService.auditLog.findUnique({
       where: { id },
+      include: {
+        user: {
+          select: { name: true },
+        },
+      },
     });
     if (!auditLog) {
       throw new NotFoundException('Log de auditoria não encontrado');

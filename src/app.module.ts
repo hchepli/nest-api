@@ -22,6 +22,9 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guards';
 import { StorageModule } from './storage/storage.module';
+import { CalendarModule } from './calendar/calendar.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { AuditInterceptor } from './audit-logs/interceptors/audit.interceptor';
 
 @Module({
   imports: [
@@ -44,17 +47,22 @@ import { StorageModule } from './storage/storage.module';
     AuditLogsModule,
     ScheduleAssignmentModule,
     PermissionModule,
-    StorageModule
+    StorageModule,
+    CalendarModule,
   ],
   providers: [
-  {
-    provide: APP_GUARD,
-    useClass: JwtAuthGuard,
-  },
-  {
-    provide: APP_GUARD,
-    useClass: RolesGuard,
-  },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
   ],
 })
-export class AppModule {}
+export class AppModule { }

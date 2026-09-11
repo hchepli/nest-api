@@ -1,8 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, ParseUUIDPipe } from '@nestjs/common';
 import { AuditLogsService } from './audit-logs.service';
 import { CreateAuditLogDto } from './dto/create-audit-log.dto';
-import { UpdateAuditLogDto } from './dto/update-audit-log.dto';
-import { ParseIntPipe } from '@nestjs/common/pipes/parse-int.pipe';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
@@ -17,27 +15,15 @@ export class AuditLogsController {
     return this.auditLogsService.create(createAuditLogDto);
   }
 
-  @Roles('Admin Geral')
+  @Roles('Admin Geral', 'Secretaria')
   @Get()
   findAll() {
     return this.auditLogsService.findAll();
   }
 
-  @Roles('Admin Geral')
+  @Roles('Admin Geral', 'Secretaria')
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.auditLogsService.findOne(id);
-  }
-
-  @Roles('Admin Geral')
-  @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: string, @Body() updateAuditLogDto: UpdateAuditLogDto) {
-    return this.auditLogsService.update(id, updateAuditLogDto);
-  }
-
-  @Roles('Admin Geral')
-  @Delete(':id')
-  remove(@Param('id', ParseIntPipe) id: string) {
-    return this.auditLogsService.remove(id);
   }
 }

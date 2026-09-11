@@ -6,12 +6,14 @@ import { ParseIntPipe } from '@nestjs/common/pipes/parse-int.pipe';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
+import { Auditable } from '../audit-logs/decorators/auditable.decorator';
 
 @ApiBearerAuth()
 @Controller('attendance-confirmations')
 export class AttendanceConfirmationsController {
   constructor(private readonly attendanceConfirmationsService: AttendanceConfirmationsService) {}
 
+  @Auditable('Attendance Confirmation')
   @Public() // RF012 - Garantir Presença, sem login
   @Post()
   create(@Body() createAttendanceConfirmationDto: CreateAttendanceConfirmationDto) {
@@ -30,12 +32,14 @@ export class AttendanceConfirmationsController {
     return this.attendanceConfirmationsService.findOne(id);
   }
 
+  @Auditable('Attendance Confirmation')
   @Roles('Admin Geral', 'Secretaria')
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: string, @Body() updateAttendanceConfirmationDto: UpdateAttendanceConfirmationDto) {
     return this.attendanceConfirmationsService.update(id, updateAttendanceConfirmationDto);
   }
 
+  @Auditable('Attendance Confirmation')
   @Roles('Admin Geral', 'Secretaria')
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: string) {
