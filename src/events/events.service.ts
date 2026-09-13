@@ -7,10 +7,11 @@ import { Prisma, Event } from '../../generated/prisma/client';
 import { generateSlug } from '../common/utils/slug.util';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResult } from '../common/interfaces/paginated-result.interface';
+import { FindEventsQueryDto } from './dto/find-events-query.dto';
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prismaService: PrismaService) {}
+  constructor(private readonly prismaService: PrismaService) { }
 
   async create(createEventDto: CreateEventDto) {
     const { slug, ...rest } = createEventDto;
@@ -28,12 +29,14 @@ export class EventsService {
     }
   }
 
-  async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Event>> {
-    const { page = 1, limit = 10, search, sortBy, order = 'desc' } = query;
+  async findAll(query: FindEventsQueryDto): Promise<PaginatedResult<Event>> {
+    const { page = 1, limit = 10, search, sortBy, order = 'desc', includeAll } = query;
     const skip = (page - 1) * limit;
 
+    const shouldIncludeAll = includeAll === 'true';
+
     const where: Prisma.EventWhereInput = {
-      status: 'ACTIVE',
+      ...(!shouldIncludeAll && { status: 'ACTIVE' }),
       ...(search && {
         name: { contains: search, mode: 'insensitive' },
       }),
@@ -63,7 +66,14 @@ export class EventsService {
   }
 
   async findOne(id: number) {
-    const event = await this.prismaService.event.findUnique({ where: { id } });
+    const event = await this.prismaService.event.findUnique({
+      where: { id },
+      include: {
+        pastoralGroups: {
+          include: { pastoralGroup: true },
+        },
+      },
+    });
     if (!event) {
       throw new NotFoundException('Evento não encontrado');
     }

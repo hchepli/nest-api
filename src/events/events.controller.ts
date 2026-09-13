@@ -8,11 +8,12 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { Auditable } from '../audit-logs/decorators/auditable.decorator';
+import { FindEventsQueryDto } from './dto/find-events-query.dto';
 
 @ApiBearerAuth()
 @Controller('events')
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(private readonly eventsService: EventsService) { }
 
 
   @Auditable('Event')
@@ -22,11 +23,11 @@ export class EventsController {
     return this.eventsService.create(createEventDto);
   }
 
-  @Public()
-  @Get()
-  findAll(@Query() query: PaginationQueryDto) {
-    return this.eventsService.findAll(query);
-  }
+@Public()
+@Get()
+findAll(@Query() query: FindEventsQueryDto) {
+  return this.eventsService.findAll(query);
+}
 
   @Public()
   @Get(':id')

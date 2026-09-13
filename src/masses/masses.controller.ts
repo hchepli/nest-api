@@ -3,6 +3,7 @@ import { MassesService } from './masses.service';
 import { CreateMassDto } from './dto/create-mass.dto';
 import { UpdateMassDto } from './dto/update-mass.dto';
 import { LinkPastoralGroupsDto } from './dto/link-pastoral-groups.dto';
+import { MassesWithoutPastoralQueryDto } from './dto/masses-without-pastoral-query.dto';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -21,11 +22,21 @@ export class MassesController {
     return this.massesService.create(createMassDto);
   }
 
-@Public()
-@Get()
-findAll(@Query() query: MassQueryDto) {
-  return this.massesService.findAll(query);
-}
+  @Public()
+  @Get()
+  findAll(@Query() query: MassQueryDto) {
+    return this.massesService.findAll(query);
+  }
+
+  // Card "Missas sem Pastoral" do Painel Admin (Bloco 8). Precisa vir ANTES
+  // de @Get(':id') — senão o Nest casa "without-pastoral" como se fosse um
+  // :id e quebra o endpoint. Restrito aos mesmos cargos que veem o Painel
+  // (dado agregado de gestão, não é conteúdo público).
+  @Roles('Admin Geral', 'Secretaria')
+  @Get('without-pastoral')
+  findWithoutPastoral(@Query() query: MassesWithoutPastoralQueryDto) {
+    return this.massesService.findWithoutPastoral(query);
+  }
 
   @Public()
   @Get(':id')

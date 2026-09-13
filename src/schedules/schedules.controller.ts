@@ -10,11 +10,12 @@ import type { Response } from 'express';
 import { buildSchedulesCsv } from './utils/schedules-csv.util';
 import { buildSchedulesPdf } from './utils/schedules-pdf.util';
 import { Auditable } from '../audit-logs/decorators/auditable.decorator';
+import { PendingScheduleQueryDto } from './dto/pending-schedule-query.dto';
 
 @ApiBearerAuth()
 @Controller('schedules')
 export class SchedulesController {
-  constructor(private readonly schedulesService: SchedulesService) {}
+  constructor(private readonly schedulesService: SchedulesService) { }
 
   @Auditable('Mass')
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
@@ -35,37 +36,44 @@ export class SchedulesController {
     return this.schedulesService.findAllForExport(req.user, query);
   }
 
-@Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
-@Get('report/export')
-async exportReport(
-  @Req() req: RequestWithUser,
-  @Query() query: ScheduleQueryDto,
-  @Res() res: Response,
-) {
-  if (query.format !== 'csv' && query.format !== 'pdf') {
-    return res.status(400).json({
-      message: 'Formato inválido. Apenas "csv" ou "pdf" são aceitos.',
+  @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
+  @Get('report/export')
+  async exportReport(
+    @Req() req: RequestWithUser,
+    @Query() query: ScheduleQueryDto,
+    @Res() res: Response,
+  ) {
+    if (query.format !== 'csv' && query.format !== 'pdf') {
+      return res.status(400).json({
+        message: 'Formato inválido. Apenas "csv" ou "pdf" são aceitos.',
+      });
+    }
+
+    const schedules = await this.schedulesService.findAllForExport(req.user, query);
+
+    if (query.format === 'csv') {
+      const csv = buildSchedulesCsv(schedules);
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="relatorio-escalas.csv"');
+      return res.send(csv);
+    }
+
+    const doc = buildSchedulesPdf(schedules, {
+      startDate: query.startDate,
+      endDate: query.endDate,
     });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="relatorio-escalas.pdf"');
+    doc.pipe(res);
+    doc.end();
   }
 
-  const schedules = await this.schedulesService.findAllForExport(req.user, query);
-
-  if (query.format === 'csv') {
-    const csv = buildSchedulesCsv(schedules);
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="relatorio-escalas.csv"');
-    return res.send(csv);
-  }
-
-  const doc = buildSchedulesPdf(schedules, {
-    startDate: query.startDate,
-    endDate: query.endDate,
-  });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="relatorio-escalas.pdf"');
-  doc.pipe(res);
-  doc.end();
+@Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
+@Get('pending')
+findPending(@Query() query: PendingScheduleQueryDto, @Req() req: RequestWithUser) {
+  return this.schedulesService.findPending(query.start, query.end, req.user, query.pastoralGroupId);
 }
+  
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Get(':id')
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
