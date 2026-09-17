@@ -12,14 +12,15 @@ export class CreateAlbumDto {
     @MaxLength(150)
     title!: string;
 
-    @ApiProperty({
+    @ApiPropertyOptional({
         description: 'Slug do álbum (se não enviado, geração automática fica a cargo do service)',
         example: 'album-primeira-eucaristia',
         maxLength: 150,
     })
     @IsString()
+    @IsOptional()
     @MaxLength(150)
-    slug!: string;
+    slug?: string;
 
     @ApiPropertyOptional({
         description: 'Descrição do Álbum',
