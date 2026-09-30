@@ -17,7 +17,7 @@ import { PendingScheduleQueryDto } from './dto/pending-schedule-query.dto';
 export class SchedulesController {
   constructor(private readonly schedulesService: SchedulesService) { }
 
-  @Auditable('Mass')
+  @Auditable('Schedule')
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
   @Post()
   create(@Body() createScheduleDto: CreateScheduleDto, @Req() req: RequestWithUser) {
@@ -72,6 +72,12 @@ export class SchedulesController {
 @Get('pending')
 findPending(@Query() query: PendingScheduleQueryDto, @Req() req: RequestWithUser) {
   return this.schedulesService.findPending(query.start, query.end, req.user, query.pastoralGroupId);
+}
+
+@Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')
+@Get('coverage')
+findCoverage(@Query() query: PendingScheduleQueryDto, @Req() req: RequestWithUser) {
+  return this.schedulesService.findCoverage(query.start, query.end, req.user, query.pastoralGroupId);
 }
   
   @Roles('Admin Geral', 'Secretaria', 'Coordenador de Pastoral')

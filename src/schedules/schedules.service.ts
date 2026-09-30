@@ -15,18 +15,38 @@ interface ScopedUser {
 export class SchedulesService {
   constructor(private readonly prismaService: PrismaService) { }
 
+  // Pastorais vinculadas a uma Missa OU Evento (RN017)
+  private async getLinkedPastoralGroupIds(
+    massId?: number | null,
+    eventId?: number | null,
+  ): Promise<number[]> {
+    const rows =
+      massId != null
+        ? await this.prismaService.massPastoralGroup.findMany({
+          where: { massId },
+          select: { pastoralGroupId: true },
+        })
+        : await this.prismaService.eventPastoralGroup.findMany({
+          where: { eventId: eventId! },
+          select: { pastoralGroupId: true },
+        });
+    return rows.map((r) => r.pastoralGroupId);
+  }
+
   async create(createScheduleDto: CreateScheduleDto, user: ScopedUser) {
     const { massId, eventId, assignments = [], pastoralGroupId: manualPastoralGroupId } = createScheduleDto;
 
     const hasMass = massId !== undefined && massId !== null;
     const hasEvent = eventId !== undefined && eventId !== null;
 
+    // RN007: Missa XOR Evento
     if (hasMass === hasEvent) {
       throw new BadRequestException(
         'A Escala deve estar vinculada a uma Missa OU a um Evento, nunca ambos nem nenhum (RN007).',
       );
     }
 
+    // Duplicidade dentro do próprio request
     const seen = new Set<string>();
     for (const a of assignments) {
       const key = `${a.volunteerId}:${a.role}`;
@@ -38,63 +58,54 @@ export class SchedulesService {
       seen.add(key);
     }
 
-    // RN006/RN017: define o pastoralGroupId final da Escala.
-    let finalPastoralGroupId: number | null = null;
+    const isCoordinator = user.roleName === 'Coordenador de Pastoral';
+    const finalPastoralGroupId = isCoordinator
+      ? user.pastoralGroupId
+      : (manualPastoralGroupId ?? null);
 
-    if (user.roleName === 'Coordenador de Pastoral') {
-      // Automático a partir do usuário logado — Coordenador não escolhe.
-      finalPastoralGroupId = user.pastoralGroupId;
+    // Pastoral agora é OBRIGATÓRIA: 1 escala por pastoral.
+    if (finalPastoralGroupId === null || finalPastoralGroupId === undefined) {
+      throw new BadRequestException(
+        isCoordinator
+          ? 'Seu usuário não está vinculado a nenhuma Pastoral.'
+          : 'Informe a Pastoral da escala (pastoralGroupId).',
+      );
+    }
 
-      // Busca as pastorais vinculadas à Mass/Event informado (RN017).
-      const linkedPastoralGroupIds = hasMass
-        ? (
-          await this.prismaService.massPastoralGroup.findMany({
-            where: { massId },
-            select: { pastoralGroupId: true },
-          })
-        ).map((r) => r.pastoralGroupId)
-        : (
-          await this.prismaService.eventPastoralGroup.findMany({
-            where: { eventId },
-            select: { pastoralGroupId: true },
-          })
-        ).map((r) => r.pastoralGroupId);
+    // RN017: a pastoral precisa estar vinculada à Missa/Evento
+    const linkedIds = await this.getLinkedPastoralGroupIds(massId, eventId);
+    if (!linkedIds.includes(finalPastoralGroupId)) {
+      const msg = 'A Pastoral não está vinculada a esta Missa/Evento (RN017).';
+      throw isCoordinator ? new ForbiddenException(msg) : new BadRequestException(msg);
+    }
 
-      if (
-        !user.pastoralGroupId ||
-        !linkedPastoralGroupIds.includes(user.pastoralGroupId)
-      ) {
-        throw new ForbiddenException(
-          'Sua Pastoral não está vinculada a esta Missa/Evento — você não pode criar Escala aqui (RN006/RN017).',
-        );
+    // Uma escala por (Missa/Evento + Pastoral)
+    const alreadyExists = await this.prismaService.schedule.findFirst({
+      where: {
+        massId: massId ?? null,
+        eventId: eventId ?? null,
+        pastoralGroupId: finalPastoralGroupId,
+      },
+      select: { id: true },
+    });
+    if (alreadyExists) {
+      throw new ConflictException('Esta Pastoral já possui escala para esta Missa/Evento.');
+    }
+
+    // Voluntários precisam ser da pastoral da escala
+    if (assignments.length > 0) {
+      const ids = [...new Set(assignments.map((a) => a.volunteerId))];
+      const found = await this.prismaService.volunteer.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, pastoralGroupId: true },
+      });
+      if (found.length !== ids.length) {
+        throw new BadRequestException('Algum Voluntário informado não existe.');
       }
-    } else {
-      // Admin Geral/Secretaria: pastoralGroupId manual e opcional.
-      finalPastoralGroupId = manualPastoralGroupId ?? null;
-
-      // Se informado manualmente, precisa ser coerente com o vínculo
-      // da Mass/Event (RN017) — não só bater com o usuário, mas o dado
-      // em si precisa fazer sentido.
-      if (finalPastoralGroupId !== null) {
-        const linkedPastoralGroupIds = hasMass
-          ? (
-            await this.prismaService.massPastoralGroup.findMany({
-              where: { massId },
-              select: { pastoralGroupId: true },
-            })
-          ).map((r) => r.pastoralGroupId)
-          : (
-            await this.prismaService.eventPastoralGroup.findMany({
-              where: { eventId },
-              select: { pastoralGroupId: true },
-            })
-          ).map((r) => r.pastoralGroupId);
-
-        if (!linkedPastoralGroupIds.includes(finalPastoralGroupId)) {
-          throw new BadRequestException(
-            'A Pastoral informada não está vinculada à Missa/Evento selecionado (RN017).',
-          );
-        }
+      if (found.some((v) => v.pastoralGroupId !== finalPastoralGroupId)) {
+        throw new BadRequestException(
+          'Todos os Voluntários da escala devem pertencer à Pastoral da escala.',
+        );
       }
     }
 
@@ -212,13 +223,15 @@ export class SchedulesService {
   }
 
   async findAllForExport(user: ScopedUser, query: ScheduleQueryDto) {
-    const { massId, eventId, volunteerId, startDate, endDate } = query;
+    const { massId, eventId, volunteerId, pastoralGroupId, startDate, endDate } = query;
 
     // Escopo por pastoral (RN006/RN008) - idêntico ao findAll
     const scopeWhere: Prisma.ScheduleWhereInput =
       user.roleName === 'Coordenador de Pastoral'
         ? { pastoralGroupId: user.pastoralGroupId }
-        : {};
+        : pastoralGroupId
+          ? { pastoralGroupId }
+          : {};
 
     // Filtros do relatório - idêntico ao findAll
     const filterWhere: Prisma.ScheduleWhereInput = {
@@ -290,8 +303,16 @@ export class SchedulesService {
 
   async update(id: string, updateScheduleDto: UpdateScheduleDto, user: ScopedUser) {
     await this.findOne(id, user);
+
+    // Vínculos (massId/eventId/pastoralGroupId) e atribuições NÃO podem ser
+    // alterados por aqui: mexer neles burlaria RN006/RN007/RN017.
+    // Hoje não sobra campo editável no Schedule; edição de atribuições
+    // fica para uma tarefa própria.
+    const { massId, eventId, pastoralGroupId, ...editable } = updateScheduleDto;
+    void massId; void eventId; void pastoralGroupId;
+
     try {
-      return await this.prismaService.schedule.update({ where: { id }, data: updateScheduleDto });
+      return await this.prismaService.schedule.update({ where: { id }, data: editable });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
@@ -305,109 +326,179 @@ export class SchedulesService {
     }
   }
 
+  // NOVO: cobertura por Missa/Evento (1 linha por Missa/Evento, com status por pastoral)
+  async findCoverage(start: string, end: string, user: ScopedUser, pastoralGroupId?: number) {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const isCoordinator = user.roleName === 'Coordenador de Pastoral';
+
+    if (isCoordinator && !user.pastoralGroupId) return [];
+    const scopedId = isCoordinator ? user.pastoralGroupId! : pastoralGroupId;
+
+    const pgSelect = {
+      where: scopedId ? { pastoralGroupId: scopedId } : undefined,
+      select: { pastoralGroupId: true, pastoralGroup: { select: { name: true } } },
+    };
+    const linkFilter = scopedId ? { pastoralGroups: { some: { pastoralGroupId: scopedId } } } : {};
+
+    const [masses, events] = await Promise.all([
+      this.prismaService.mass.findMany({
+        where: { dateTime: { gte: startDate, lte: endDate }, ...linkFilter },
+        orderBy: { dateTime: 'asc' },
+        select: {
+          id: true,
+          title: true,
+          dateTime: true,
+          pastoralGroups: pgSelect,
+          schedules: { select: { pastoralGroupId: true } },
+        },
+      }),
+      this.prismaService.event.findMany({
+        where: { startDate: { gte: startDate, lte: endDate }, ...linkFilter },
+        orderBy: { startDate: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          pastoralGroups: pgSelect,
+          schedules: { select: { pastoralGroupId: true } },
+        },
+      }),
+    ]);
+
+    const build = (
+      sourceType: 'MASS' | 'EVENT',
+      sourceId: number,
+      title: string,
+      date: Date,
+      links: { pastoralGroupId: number; pastoralGroup: { name: string } }[],
+      schedules: { pastoralGroupId: number | null }[],
+    ) => {
+      const done = new Set(schedules.map((s) => s.pastoralGroupId));
+      const pastorals = links.map((l) => ({
+        id: l.pastoralGroupId,
+        name: l.pastoralGroup.name,
+        scheduled: done.has(l.pastoralGroupId),
+      }));
+      const status =
+        pastorals.length === 0
+          ? 'NO_PASTORAL'
+          : pastorals.every((p) => p.scheduled)
+            ? 'COMPLETE'
+            : 'INCOMPLETE';
+      return { sourceType, sourceId, title, date, status, pastorals };
+    };
+
+    return [
+      ...masses.map((m) => build('MASS', m.id, m.title, m.dateTime, m.pastoralGroups, m.schedules)),
+      ...events.map((e) => build('EVENT', e.id, e.name, e.startDate, e.pastoralGroups, e.schedules)),
+    ].sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+
+  // LEGADO: manter até o front migrar para /schedules/coverage
   async findPending(
-  start: string,
-  end: string,
-  user: ScopedUser,
-  pastoralGroupId?: number,
-) {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
+    start: string,
+    end: string,
+    user: ScopedUser,
+    pastoralGroupId?: number,
+  ) {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
 
-  const isCoordinator = user.roleName === 'Coordenador de Pastoral';
+    const isCoordinator = user.roleName === 'Coordenador de Pastoral';
 
-  // Escopo (RN006/RN008 + regra do PastoralSwitcher):
-  // - Coordenador: SEMPRE a própria pastoral, ignora qualquer filtro vindo da query.
-  // - Admin/Secretaria: sem filtro = pendente geral (todas as pastorais);
-  //   com pastoralGroupId na query (switcher numa pastoral específica) = só aquela.
-  const scopedPastoralGroupId = isCoordinator ? user.pastoralGroupId! : pastoralGroupId;
+    // Escopo (RN006/RN008 + regra do PastoralSwitcher):
+    // - Coordenador: SEMPRE a própria pastoral, ignora qualquer filtro vindo da query.
+    // - Admin/Secretaria: sem filtro = pendente geral (todas as pastorais);
+    //   com pastoralGroupId na query (switcher numa pastoral específica) = só aquela.
+    const scopedPastoralGroupId = isCoordinator ? user.pastoralGroupId! : pastoralGroupId;
 
-  const [masses, events] = await Promise.all([
-    this.prismaService.mass.findMany({
-      where: {
-        dateTime: { gte: startDate, lte: endDate },
-        pastoralGroups: scopedPastoralGroupId
-          ? { some: { pastoralGroupId: scopedPastoralGroupId } }
-          : { some: {} },
-      },
-      select: {
-        id: true,
-        title: true,
-        dateTime: true,
-        pastoralGroups: {
-          where: scopedPastoralGroupId ? { pastoralGroupId: scopedPastoralGroupId } : undefined,
-          select: { pastoralGroupId: true, pastoralGroup: { select: { name: true } } },
+    const [masses, events] = await Promise.all([
+      this.prismaService.mass.findMany({
+        where: {
+          dateTime: { gte: startDate, lte: endDate },
+          pastoralGroups: scopedPastoralGroupId
+            ? { some: { pastoralGroupId: scopedPastoralGroupId } }
+            : { some: {} },
         },
-      },
-    }),
-    this.prismaService.event.findMany({
-      where: {
-        startDate: { gte: startDate, lte: endDate },
-        pastoralGroups: scopedPastoralGroupId
-          ? { some: { pastoralGroupId: scopedPastoralGroupId } }
-          : { some: {} },
-      },
-      select: {
-        id: true,
-        name: true,
-        startDate: true,
-        pastoralGroups: {
-          where: scopedPastoralGroupId ? { pastoralGroupId: scopedPastoralGroupId } : undefined,
-          select: { pastoralGroupId: true, pastoralGroup: { select: { name: true } } },
+        select: {
+          id: true,
+          title: true,
+          dateTime: true,
+          pastoralGroups: {
+            where: scopedPastoralGroupId ? { pastoralGroupId: scopedPastoralGroupId } : undefined,
+            select: { pastoralGroupId: true, pastoralGroup: { select: { name: true } } },
+          },
         },
+      }),
+      this.prismaService.event.findMany({
+        where: {
+          startDate: { gte: startDate, lte: endDate },
+          pastoralGroups: scopedPastoralGroupId
+            ? { some: { pastoralGroupId: scopedPastoralGroupId } }
+            : { some: {} },
+        },
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          pastoralGroups: {
+            where: scopedPastoralGroupId ? { pastoralGroupId: scopedPastoralGroupId } : undefined,
+            select: { pastoralGroupId: true, pastoralGroup: { select: { name: true } } },
+          },
+        },
+      }),
+    ]);
+
+    // Checagem de "já escalado" continua SEM escopo — precisa saber se existe
+    // Schedule pra aquele par, mesmo que seja de outra pastoral.
+    const existingSchedules = await this.prismaService.schedule.findMany({
+      where: {
+        OR: [
+          { mass: { dateTime: { gte: startDate, lte: endDate } } },
+          { event: { startDate: { gte: startDate, lte: endDate } } },
+        ],
       },
-    }),
-  ]);
+      select: { massId: true, eventId: true, pastoralGroupId: true },
+    });
 
-  // Checagem de "já escalado" continua SEM escopo — precisa saber se existe
-  // Schedule pra aquele par, mesmo que seja de outra pastoral (ver nota anterior).
-  const existingSchedules = await this.prismaService.schedule.findMany({
-    where: {
-      OR: [
-        { mass: { dateTime: { gte: startDate, lte: endDate } } },
-        { event: { startDate: { gte: startDate, lte: endDate } } },
-      ],
-    },
-    select: { massId: true, eventId: true, pastoralGroupId: true },
-  });
+    const scheduledMassPairs = new Set(
+      existingSchedules.filter((s) => s.massId !== null).map((s) => `${s.massId}:${s.pastoralGroupId}`),
+    );
+    const scheduledEventPairs = new Set(
+      existingSchedules.filter((s) => s.eventId !== null).map((s) => `${s.eventId}:${s.pastoralGroupId}`),
+    );
 
-  const scheduledMassPairs = new Set(
-    existingSchedules.filter((s) => s.massId !== null).map((s) => `${s.massId}:${s.pastoralGroupId}`),
-  );
-  const scheduledEventPairs = new Set(
-    existingSchedules.filter((s) => s.eventId !== null).map((s) => `${s.eventId}:${s.pastoralGroupId}`),
-  );
+    const pendingFromMasses = masses.flatMap((mass) =>
+      mass.pastoralGroups
+        .filter((pg) => !scheduledMassPairs.has(`${mass.id}:${pg.pastoralGroupId}`))
+        .map((pg) => ({
+          sourceType: 'MASS' as const,
+          sourceId: mass.id,
+          sourceTitle: mass.title,
+          sourceDate: mass.dateTime,
+          pastoralGroupId: pg.pastoralGroupId,
+          pastoralGroupName: pg.pastoralGroup.name,
+        })),
+    );
 
-  const pendingFromMasses = masses.flatMap((mass) =>
-    mass.pastoralGroups
-      .filter((pg) => !scheduledMassPairs.has(`${mass.id}:${pg.pastoralGroupId}`))
-      .map((pg) => ({
-        sourceType: 'MASS' as const,
-        sourceId: mass.id,
-        sourceTitle: mass.title,
-        sourceDate: mass.dateTime,
-        pastoralGroupId: pg.pastoralGroupId,
-        pastoralGroupName: pg.pastoralGroup.name,
-      })),
-  );
+    const pendingFromEvents = events.flatMap((event) =>
+      event.pastoralGroups
+        .filter((pg) => !scheduledEventPairs.has(`${event.id}:${pg.pastoralGroupId}`))
+        .map((pg) => ({
+          sourceType: 'EVENT' as const,
+          sourceId: event.id,
+          sourceTitle: event.name,
+          sourceDate: event.startDate,
+          pastoralGroupId: pg.pastoralGroupId,
+          pastoralGroupName: pg.pastoralGroup.name,
+        })),
+    );
 
-  const pendingFromEvents = events.flatMap((event) =>
-    event.pastoralGroups
-      .filter((pg) => !scheduledEventPairs.has(`${event.id}:${pg.pastoralGroupId}`))
-      .map((pg) => ({
-        sourceType: 'EVENT' as const,
-        sourceId: event.id,
-        sourceTitle: event.name,
-        sourceDate: event.startDate,
-        pastoralGroupId: pg.pastoralGroupId,
-        pastoralGroupName: pg.pastoralGroup.name,
-      })),
-  );
-
-  return [...pendingFromMasses, ...pendingFromEvents].sort(
-    (a, b) => a.sourceDate.getTime() - b.sourceDate.getTime(),
-  );
-}
+    return [...pendingFromMasses, ...pendingFromEvents].sort(
+      (a, b) => a.sourceDate.getTime() - b.sourceDate.getTime(),
+    );
+  }
 
   async remove(id: string, user: ScopedUser) {
     await this.findOne(id, user);

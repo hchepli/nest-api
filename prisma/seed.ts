@@ -9,8 +9,33 @@ const prisma = new PrismaClient({ adapter });
 
 const SALT_ROUNDS = 10;
 
+async function cleanDatabase() {
+  // Ordem respeita as FKs (filhos antes dos pais). Roles são mantidos (upsert).
+  await prisma.auditLog.deleteMany();
+  await prisma.attendanceConfirmation.deleteMany();
+  await prisma.photo.deleteMany();
+  await prisma.album.deleteMany();
+  await prisma.scheduleAssignment.deleteMany();
+  await prisma.schedule.deleteMany();
+  await prisma.massPastoralGroup.deleteMany();
+  await prisma.eventPastoralGroup.deleteMany();
+  await prisma.event.deleteMany();
+  await prisma.mass.deleteMany();
+  await prisma.massTemplate.deleteMany();
+  await prisma.volunteer.deleteMany();
+  await prisma.announcement.deleteMany();
+  await prisma.category.deleteMany();
+  await prisma.sacrament.deleteMany();
+  await prisma.permission.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.pastoralGroup.deleteMany();
+}
+
 async function main() {
   console.log('Iniciando seed...');
+
+  console.log('Limpando dados antigos...');
+  await cleanDatabase();
 
   // ------------------------------------------------------------
   // 1. ROLES (cargos base - RN005)
@@ -18,11 +43,7 @@ async function main() {
   const roleAdmin = await prisma.role.upsert({
     where: { name: 'Admin Geral' },
     update: {},
-    create: {
-      name: 'Admin Geral',
-      description: 'Acesso total ao sistema',
-      isBase: true,
-    },
+    create: { name: 'Admin Geral', description: 'Acesso total ao sistema', isBase: true },
   });
 
   const roleSecretaria = await prisma.role.upsert({
@@ -30,8 +51,7 @@ async function main() {
     update: {},
     create: {
       name: 'Secretaria',
-      description:
-        'Gestão de comunicados, eventos, missas, calendário, sacramentos e galeria',
+      description: 'Gestão de comunicados, eventos, missas, calendário, sacramentos e galeria',
       isBase: true,
     },
   });
@@ -49,13 +69,14 @@ async function main() {
   console.log('Roles criados.');
 
   // ------------------------------------------------------------
-  // 2. PASTORAL GROUPS (2, pra testar RN006/RN008 com escopo diferente)
+  // 2. PASTORAL GROUPS (3, com defaultRole - função sugerida na escala)
   // ------------------------------------------------------------
   const pastoralCatequese = await prisma.pastoralGroup.create({
     data: {
       name: 'Catequese',
       description: 'Pastoral responsável pela catequese infantil e de adultos',
       contact: 'catequese@paroquia.org',
+      defaultRole: 'apoio_organizacao',
     },
   });
 
@@ -64,13 +85,23 @@ async function main() {
       name: 'Liturgia',
       description: 'Pastoral responsável pela organização litúrgica das missas',
       contact: 'liturgia@paroquia.org',
+      defaultRole: 'leitor',
     },
   });
 
-  console.log('Grupos pastorais criados.');
+  const pastoralCoroinhas = await prisma.pastoralGroup.create({
+    data: {
+      name: 'Coroinhas',
+      description: 'Pastoral dos coroinhas e acólitos',
+      contact: 'coroinhas@paroquia.org',
+      defaultRole: 'coroinha',
+    },
+  });
+
+  console.log('Pastorais criadas.');
 
   // ------------------------------------------------------------
-  // 3. USERS (1 de cada cargo - senha hasheada de verdade)
+  // 3. USERS (senha hasheada de verdade)
   // ------------------------------------------------------------
   const passwordHash = await bcrypt.hash('senha12345', SALT_ROUNDS);
 
@@ -94,7 +125,7 @@ async function main() {
     },
   });
 
-  const userCoordenador = await prisma.user.create({
+  await prisma.user.create({
     data: {
       name: 'Coordenador Catequese Teste',
       email: 'coordenador.catequese@paroquia.org',
@@ -105,23 +136,47 @@ async function main() {
     },
   });
 
+  await prisma.user.create({
+    data: {
+      name: 'Coordenador Liturgia Teste',
+      email: 'coordenador.liturgia@paroquia.org',
+      passwordHash,
+      roleId: roleCoordenador.id,
+      pastoralGroupId: pastoralLiturgia.id, // RN006
+      status: 'ACTIVE',
+    },
+  });
+
   console.log('Usuários criados (senha para todos: senha12345).');
 
   // ------------------------------------------------------------
-  // 4. VOLUNTEERS (2)
+  // 4. VOLUNTEERS (cada um pertence a exatamente 1 Pastoral - Bloco 1)
   // ------------------------------------------------------------
-  const voluntario1 = await prisma.volunteer.create({
-    data: { name: 'João da Silva', phone: '11999990001', email: 'joao@example.com', pastoralGroup: { connect: { id: 1 } }, },
+  const joao = await prisma.volunteer.create({
+    data: { name: 'João da Silva', phone: '11999990001', email: 'joao@example.com', pastoralGroupId: pastoralCatequese.id },
+  });
+  await prisma.volunteer.create({
+    data: { name: 'Carla Souza', phone: '11999990003', email: 'carla@example.com', pastoralGroupId: pastoralCatequese.id },
   });
 
-  const voluntario2 = await prisma.volunteer.create({
-    data: { name: 'Maria Oliveira', phone: '11999990002', email: 'maria@example.com', pastoralGroup: { connect: { id: 2 } }, },
+  const maria = await prisma.volunteer.create({
+    data: { name: 'Maria Oliveira', phone: '11999990002', email: 'maria@example.com', pastoralGroupId: pastoralLiturgia.id },
+  });
+  const pedro = await prisma.volunteer.create({
+    data: { name: 'Pedro Santos', phone: '11999990004', email: 'pedro@example.com', pastoralGroupId: pastoralLiturgia.id },
+  });
+
+  const ana = await prisma.volunteer.create({
+    data: { name: 'Ana Lima', phone: '11999990005', email: 'ana@example.com', pastoralGroupId: pastoralCoroinhas.id },
+  });
+  await prisma.volunteer.create({
+    data: { name: 'Lucas Ferreira', phone: '11999990006', email: 'lucas@example.com', pastoralGroupId: pastoralCoroinhas.id },
   });
 
   console.log('Voluntários criados.');
 
   // ------------------------------------------------------------
-  // 5. CATEGORIES (1 EVENT, 1 ANNOUNCEMENT)
+  // 5. CATEGORIES
   // ------------------------------------------------------------
   const categoriaEvento = await prisma.category.create({
     data: { name: 'Festa Junina', type: 'EVENT' },
@@ -134,12 +189,46 @@ async function main() {
   console.log('Categorias criadas.');
 
   // ------------------------------------------------------------
-  // 6. MASSES (2)
+  // 6. MASSES + vínculo com Pastorais (RN017)
+  // Cobre os 3 estados do card de escalas:
+  //   missa1 -> COMPLETE      (Liturgia + Coroinhas, ambas escaladas)
+  //   missa3 -> INCOMPLETE    (Liturgia escalada; Coroinhas e Catequese pendentes)
+  //   missa4 -> INCOMPLETE    (Liturgia + Coroinhas, nenhuma escalada)
+  //   missa5 -> NO_PASTORAL   (sem pastoral: não conta como pendente de escala)
+  //   missa2 -> fora do mês, Liturgia vinculada, sem escala
+  // Datas com fuso -03:00 (Brasil) pra não "virar o dia" no filtro do mês.
   // ------------------------------------------------------------
   const missa1 = await prisma.mass.create({
     data: {
       title: 'Missa Dominical',
-      dateTime: new Date('2026-09-06T10:00:00.000Z'),
+      dateTime: new Date('2026-09-06T10:00:00-03:00'),
+      type: 'COMMON',
+      location: 'Igreja Matriz',
+    },
+  });
+
+  const missa3 = await prisma.mass.create({
+    data: {
+      title: 'Missa Dominical',
+      dateTime: new Date('2026-09-13T10:00:00-03:00'),
+      type: 'COMMON',
+      location: 'Igreja Matriz',
+    },
+  });
+
+  const missa4 = await prisma.mass.create({
+    data: {
+      title: 'Missa Dominical',
+      dateTime: new Date('2026-09-20T10:00:00-03:00'),
+      type: 'COMMON',
+      location: 'Igreja Matriz',
+    },
+  });
+
+  await prisma.mass.create({
+    data: {
+      title: 'Missa Dominical (sem pastoral)',
+      dateTime: new Date('2026-09-27T10:00:00-03:00'),
       type: 'COMMON',
       location: 'Igreja Matriz',
     },
@@ -148,17 +237,30 @@ async function main() {
   const missa2 = await prisma.mass.create({
     data: {
       title: 'Missa de Natal',
-      dateTime: new Date('2026-12-24T22:00:00.000Z'),
+      dateTime: new Date('2026-12-24T22:00:00-03:00'),
       type: 'SPECIAL',
       location: 'Igreja Matriz',
       notes: 'Missa do Galo',
     },
   });
 
-  console.log('Missas criadas.');
+  await prisma.massPastoralGroup.createMany({
+    data: [
+      { massId: missa1.id, pastoralGroupId: pastoralLiturgia.id },
+      { massId: missa1.id, pastoralGroupId: pastoralCoroinhas.id },
+      { massId: missa3.id, pastoralGroupId: pastoralLiturgia.id },
+      { massId: missa3.id, pastoralGroupId: pastoralCoroinhas.id },
+      { massId: missa3.id, pastoralGroupId: pastoralCatequese.id },
+      { massId: missa4.id, pastoralGroupId: pastoralLiturgia.id },
+      { massId: missa4.id, pastoralGroupId: pastoralCoroinhas.id },
+      { massId: missa2.id, pastoralGroupId: pastoralLiturgia.id },
+    ],
+  });
+
+  console.log('Missas criadas (com pastorais vinculadas).');
 
   // ------------------------------------------------------------
-  // 7. EVENTS (2 - um vinculado a categoria, sem vínculo obrigatório com missa)
+  // 7. EVENTS + vínculo com Pastorais (RN017)
   // ------------------------------------------------------------
   const evento1 = await prisma.event.create({
     data: {
@@ -166,8 +268,8 @@ async function main() {
       slug: 'festa-junina-2026',
       description: 'Festa junina anual da paróquia',
       categoryId: categoriaEvento.id,
-      startDate: new Date('2026-06-20T18:00:00.000Z'),
-      endDate: new Date('2026-06-20T23:00:00.000Z'),
+      startDate: new Date('2026-06-20T18:00:00-03:00'),
+      endDate: new Date('2026-06-20T23:00:00-03:00'),
       location: 'Salão Paroquial',
       status: 'ACTIVE',
     },
@@ -178,58 +280,57 @@ async function main() {
       name: 'Novena de Natal',
       slug: 'novena-de-natal-2026',
       description: 'Novena preparatória para o Natal',
-      startDate: new Date('2026-12-15T19:00:00.000Z'),
-      endDate: new Date('2026-12-23T21:00:00.000Z'),
+      startDate: new Date('2026-12-15T19:00:00-03:00'),
+      endDate: new Date('2026-12-23T21:00:00-03:00'),
       location: 'Igreja Matriz',
       status: 'ACTIVE',
       massId: missa2.id, // RN002 - correlação opcional
     },
   });
 
-  console.log('Eventos criados.');
-
-  // ------------------------------------------------------------
-  // 8. SCHEDULES (1 por pastoral - RN007: vínculo exclusivo Mass XOR Event)
-  // ------------------------------------------------------------
-  const escalaCatequese = await prisma.schedule.create({
-    data: {
-      eventId: evento1.id,
-      pastoralGroupId: pastoralCatequese.id,
-    },
+  await prisma.eventPastoralGroup.createMany({
+    data: [
+      { eventId: evento1.id, pastoralGroupId: pastoralCatequese.id },
+      { eventId: evento2.id, pastoralGroupId: pastoralLiturgia.id },
+    ],
   });
 
-  const escalaLiturgia = await prisma.schedule.create({
-    data: {
-      massId: missa1.id,
-      pastoralGroupId: pastoralLiturgia.id,
-    },
+  console.log('Eventos criados (com pastorais vinculadas).');
+
+  // ------------------------------------------------------------
+  // 8. SCHEDULES (1 por Missa/Evento + Pastoral; pastoralGroupId sempre preenchido)
+  // ------------------------------------------------------------
+  const escalaMissa1Liturgia = await prisma.schedule.create({
+    data: { massId: missa1.id, pastoralGroupId: pastoralLiturgia.id },
+  });
+  const escalaMissa1Coroinhas = await prisma.schedule.create({
+    data: { massId: missa1.id, pastoralGroupId: pastoralCoroinhas.id },
+  });
+  const escalaMissa3Liturgia = await prisma.schedule.create({
+    data: { massId: missa3.id, pastoralGroupId: pastoralLiturgia.id },
+  });
+  const escalaEvento1Catequese = await prisma.schedule.create({
+    data: { eventId: evento1.id, pastoralGroupId: pastoralCatequese.id },
   });
 
   console.log('Escalas criadas.');
 
   // ------------------------------------------------------------
-  // 9. SCHEDULE ASSIGNMENTS (atribuições dos voluntários nas escalas)
+  // 9. SCHEDULE ASSIGNMENTS (voluntário sempre da pastoral da escala)
   // ------------------------------------------------------------
-  await prisma.scheduleAssignment.create({
-    data: {
-      scheduleId: escalaCatequese.id,
-      volunteerId: voluntario1.id,
-      role: 'apoio_organizacao',
-    },
-  });
-
-  await prisma.scheduleAssignment.create({
-    data: {
-      scheduleId: escalaLiturgia.id,
-      volunteerId: voluntario2.id,
-      role: 'leitor',
-    },
+  await prisma.scheduleAssignment.createMany({
+    data: [
+      { scheduleId: escalaMissa1Liturgia.id, volunteerId: maria.id, role: 'leitor' },
+      { scheduleId: escalaMissa1Coroinhas.id, volunteerId: ana.id, role: 'coroinha' },
+      { scheduleId: escalaMissa3Liturgia.id, volunteerId: pedro.id, role: 'leitor' },
+      { scheduleId: escalaEvento1Catequese.id, volunteerId: joao.id, role: 'apoio_organizacao' },
+    ],
   });
 
   console.log('Atribuições de escala criadas.');
 
   // ------------------------------------------------------------
-  // 10. ANNOUNCEMENTS (1 DRAFT, 1 PUBLISHED - autor = Admin Geral)
+  // 10. ANNOUNCEMENTS
   // ------------------------------------------------------------
   await prisma.announcement.create({
     data: {
@@ -256,7 +357,7 @@ async function main() {
   console.log('Comunicados criados.');
 
   // ------------------------------------------------------------
-  // 11. SACRAMENT (1)
+  // 11. SACRAMENT
   // ------------------------------------------------------------
   await prisma.sacrament.create({
     data: {
@@ -264,9 +365,7 @@ async function main() {
       slug: 'batismo',
       description: 'Sacramento de iniciação cristã.',
       requiredDocuments: 'Certidão de nascimento da criança, documento dos pais.',
-      faq: [
-        { pergunta: 'Qual a idade mínima?', resposta: 'Não há idade mínima definida.' },
-      ],
+      faq: [{ pergunta: 'Qual a idade mínima?', resposta: 'Não há idade mínima definida.' }],
       displayOrder: 1,
     },
   });
@@ -274,9 +373,9 @@ async function main() {
   console.log('Sacramento criado.');
 
   // ------------------------------------------------------------
-  // 12. ALBUMS (1 avulso, 1 vinculado a evento - RN003)
+  // 12. ALBUMS (RN003)
   // ------------------------------------------------------------
-  const albumAvulso = await prisma.album.create({
+  await prisma.album.create({
     data: {
       title: 'Álbum Avulso de Teste',
       slug: 'album-avulso-de-teste',
@@ -296,69 +395,82 @@ async function main() {
   console.log('Álbuns criados.');
 
   // ------------------------------------------------------------
-  // 13. PHOTOS (2 no álbum vinculado ao evento - RN010)
+  // 13. PHOTOS (RN010 - capa única)
   // ------------------------------------------------------------
   await prisma.photo.create({
-    data: {
-      albumId: albumEvento.id,
-      url: 'https://placeholder.local/fotos/festa-junina-1.jpg',
-      isCover: true,
-    },
+    data: { albumId: albumEvento.id, url: 'https://placeholder.local/fotos/festa-junina-1.jpg', isCover: true },
   });
-
   await prisma.photo.create({
-    data: {
-      albumId: albumEvento.id,
-      url: 'https://placeholder.local/fotos/festa-junina-2.jpg',
-      isCover: false,
-    },
+    data: { albumId: albumEvento.id, url: 'https://placeholder.local/fotos/festa-junina-2.jpg', isCover: false },
   });
 
   console.log('Fotos criadas.');
 
   // ------------------------------------------------------------
-  // 14. ATTENDANCE CONFIRMATION (RF012 - sem login, 1 de teste)
+  // 14. ATTENDANCE CONFIRMATION (RF012)
   // ------------------------------------------------------------
   await prisma.attendanceConfirmation.create({
-    data: {
-      eventId: evento1.id,
-      name: 'Visitante de Teste',
-      contact: '11988887777',
-      ipAddress: '127.0.0.1',
-    },
+    data: { eventId: evento1.id, name: 'Visitante de Teste', contact: '11988887777', ipAddress: '127.0.0.1' },
   });
 
   console.log('Confirmação de presença criada.');
 
   // ------------------------------------------------------------
-  // 15. PERMISSIONS (básico - Admin Geral com acesso total a "usuarios")
-  // (AuditLog NÃO é semeado: é gerado pelo próprio sistema, não faz
-  // sentido popular manualmente - RNF011)
+  // 15. PERMISSIONS
   // ------------------------------------------------------------
   await prisma.permission.create({
-    data: {
-      roleId: roleAdmin.id,
-      resource: 'usuarios',
-      canCreate: true,
-      canEdit: true,
-      canDelete: true,
-      canView: true,
-    },
+    data: { roleId: roleAdmin.id, resource: 'usuarios', canCreate: true, canEdit: true, canDelete: true, canView: true },
   });
-
   await prisma.permission.create({
-    data: {
-      roleId: roleSecretaria.id,
-      resource: 'eventos',
-      canCreate: true,
-      canEdit: true,
-      canDelete: true,
-      canView: true,
-    },
+    data: { roleId: roleSecretaria.id, resource: 'eventos', canCreate: true, canEdit: true, canDelete: true, canView: true },
   });
 
   console.log('Permissões criadas.');
 
+  // ------------------------------------------------------------
+  // 16. CHECAGEM DE CONSISTÊNCIA (RN006/RN007/RN017)
+  // ------------------------------------------------------------
+  const problems: string[] = [];
+
+  const schedules = await prisma.schedule.findMany({
+    include: { assignments: { include: { volunteer: true } } },
+  });
+
+  for (const s of schedules) {
+    if (s.pastoralGroupId === null) {
+      problems.push(`Escala ${s.id}: pastoralGroupId nulo.`);
+      continue;
+    }
+    if ((s.massId === null) === (s.eventId === null)) {
+      problems.push(`Escala ${s.id}: viola RN007 (Missa XOR Evento).`);
+    }
+
+    const linked =
+      s.massId !== null
+        ? await prisma.massPastoralGroup.findUnique({
+            where: { massId_pastoralGroupId: { massId: s.massId, pastoralGroupId: s.pastoralGroupId } },
+          })
+        : await prisma.eventPastoralGroup.findUnique({
+            where: { eventId_pastoralGroupId: { eventId: s.eventId!, pastoralGroupId: s.pastoralGroupId } },
+          });
+    if (!linked) {
+      problems.push(`Escala ${s.id}: pastoral ${s.pastoralGroupId} não está vinculada à Missa/Evento (RN017).`);
+    }
+
+    for (const a of s.assignments) {
+      if (a.volunteer.pastoralGroupId !== s.pastoralGroupId) {
+        problems.push(
+          `Escala ${s.id}: voluntário "${a.volunteer.name}" não pertence à pastoral da escala.`,
+        );
+      }
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error('Seed inconsistente:\n- ' + problems.join('\n- '));
+  }
+
+  console.log('Checagem de consistência OK.');
   console.log('Seed concluído com sucesso!');
 }
 
